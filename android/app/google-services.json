@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "553987480684",
+    "project_id": "nescafe-469de",
+    "storage_bucket": "nescafe-469de.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:553987480684:android:4d01be5fbee95e981ecc49",
+        "android_client_info": {
+          "package_name": "com.example.nescafe_flutter"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDTn4bmj7DStV1A3bDSW-DS9gn-ldguw14"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
