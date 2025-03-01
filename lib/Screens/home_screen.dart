@@ -236,7 +236,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 ...List.generate(sections.length, (index) {
                   return Column(
-                    key: sectionKeys,
                     children: [
                       menuTitle(sections[index]['name']),
                       if (sections[index]['images'].isNotEmpty)
@@ -245,10 +244,21 @@ class _HomeScreenState extends State<HomeScreen> {
                           width: 500,
                           color: Colors.white,
                           child: Column(
-                            children:
-                                sections[index]['images']
-                                    .map<Widget>((image) => menuImages(image))
-                                    .toList(),
+                            children: List.generate(
+                              sections[index]['images'].length,
+                              (i) {
+                                return sections[index]['useDuplicate'][i] ==
+                                        true
+                                    ? menuImagesDuplicate(
+                                      sections[index]['images'][i],
+                                      sections[index]['item'][i],
+                                    )
+                                    : menuImages(
+                                      sections[index]['images'][i],
+                                      sections[index]['item'][i],
+                                    );
+                              },
+                            ),
                           ),
                         ),
                     ],
@@ -288,13 +298,111 @@ class menuTitle extends StatelessWidget {
 
 class menuImages extends StatefulWidget {
   late final String image;
-  menuImages(this.image);
+  late final String item;
+  menuImages(this.image, this.item);
 
   @override
   State<menuImages> createState() => _menuImagesState();
 }
 
 class _menuImagesState extends State<menuImages> {
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Container(
+          width: 370,
+          height: 213,
+          decoration: BoxDecoration(
+            image: DecorationImage(
+              image: AssetImage('assets/images/menu/${widget.image}.jpg'),
+              fit: BoxFit.cover,
+            ),
+            borderRadius: BorderRadius.all(Radius.circular(9)),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.end,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Container(
+                padding: EdgeInsets.only(right: 45),
+                decoration: BoxDecoration(
+                  color: Color(0xffD9D9D9).withOpacity(0.75),
+                  borderRadius: BorderRadius.only(
+                    topRight: Radius.circular(9),
+                    topLeft: Radius.circular(9),
+                  ),
+                ),
+                width: 370,
+                height: 50,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(left: 15),
+                      child: Container(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              widget.item,
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontFamily: 'Kanit',
+                                fontStyle: FontStyle.normal,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              'Regular',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontFamily: 'Kanit',
+                                fontStyle: FontStyle.normal,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Container(
+                      width: 90,
+                      height: 30,
+                      decoration: BoxDecoration(
+                        color: Color(0xffF9D7D7),
+                        borderRadius: BorderRadius.all(Radius.circular(21)),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text('Add'),
+                          SizedBox(width: 5),
+                          Icon(Icons.add),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        SizedBox(height: 25),
+      ],
+    );
+  }
+}
+
+class menuImagesDuplicate extends StatefulWidget {
+  late final String image;
+  late final String item;
+  menuImagesDuplicate(this.image, this.item);
+
+  @override
+  State<menuImagesDuplicate> createState() => _menuImagesDuplicateState();
+}
+
+class _menuImagesDuplicateState extends State<menuImagesDuplicate> {
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -331,84 +439,70 @@ class _menuImagesState extends State<menuImages> {
                     style: TextStyle(
                       fontFamily: 'Kanit',
                       fontStyle: FontStyle.normal,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
                     ),
                     textAlign: TextAlign.center,
                   ),
                 ),
               ),
               SizedBox(height: 20),
-              Opacity(
-                opacity: 0.75,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Color(0xffD9D9D9),
-                    borderRadius: BorderRadius.only(
-                      topRight: Radius.circular(9),
-                      topLeft: Radius.circular(9),
-                    ),
-                  ),
-                  width: 370,
-                  height: 42,
-                  child: Row(
-                    children: [
-                      Container(
-                        child: Column(children: [Text('data'), Text('data')]),
-                      ),
-                      Container(),
-                    ],
+              Container(
+                padding: EdgeInsets.only(right: 45),
+                decoration: BoxDecoration(
+                  color: Color(0xffD9D9D9).withOpacity(0.75),
+                  borderRadius: BorderRadius.only(
+                    topRight: Radius.circular(9),
+                    topLeft: Radius.circular(9),
                   ),
                 ),
-              ),
-            ],
-          ),
-        ),
-        SizedBox(height: 25),
-      ],
-    );
-  }
-}
-
-class menuImagesDuplicate extends StatefulWidget {
-  late final String image;
-  menuImagesDuplicate(this.image);
-
-  @override
-  State<menuImagesDuplicate> createState() => _menuImagesDuplicateState();
-}
-
-class _menuImagesDuplicateState extends State<menuImagesDuplicate> {
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Container(
-          width: 370,
-          height: 213,
-          decoration: BoxDecoration(
-            image: DecorationImage(
-              image: AssetImage('assets/images/menu/${widget.image}.jpg'),
-              fit: BoxFit.cover,
-            ),
-            borderRadius: BorderRadius.all(Radius.circular(9)),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              Container(width: 100, height: 25, color: Colors.red),
-              Opacity(
-                opacity: 0.75,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Color(0xffD9D9D9),
-                    borderRadius: BorderRadius.only(
-                      topRight: Radius.circular(9),
-                      topLeft: Radius.circular(9),
+                width: 370,
+                height: 50,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(left: 15),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.item,
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontFamily: 'Kanit',
+                              fontStyle: FontStyle.normal,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Text(
+                            'Regular',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontFamily: 'Kanit',
+                              fontStyle: FontStyle.normal,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  width: 370,
-                  height: 42,
+                    Container(
+                      width: 90,
+                      height: 30,
+                      decoration: BoxDecoration(
+                        color: Color(0xffF9D7D7),
+                        borderRadius: BorderRadius.all(Radius.circular(21)),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text('Add'),
+                          SizedBox(width: 5),
+                          Icon(Icons.add),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
