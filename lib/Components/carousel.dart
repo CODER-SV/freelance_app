@@ -1,11 +1,17 @@
 import 'package:flutter/material.dart';
 
 class Carousel extends StatelessWidget {
-  Carousel({required this.text, required this.colour, required this.onPressed});
+  Carousel({
+    required this.text,
+    required this.colour,
+    required this.onPressed,
+    required this.isSelected,
+  });
 
   final String text;
   final Color colour;
   final VoidCallback onPressed;
+  final bool isSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -13,7 +19,7 @@ class Carousel extends StatelessWidget {
       padding: EdgeInsets.symmetric(vertical: 15.0, horizontal: 5),
       child: Material(
         elevation: 5.0,
-        color: colour,
+        color: isSelected ? Color(0xffF9D7D7) : colour,
         borderRadius: BorderRadius.circular(6.0),
         child: MaterialButton(
           onPressed: onPressed,
@@ -22,11 +28,12 @@ class Carousel extends StatelessWidget {
           child: Text(
             text,
             style: TextStyle(
-                fontFamily: 'Kanit',
-                fontStyle: FontStyle.normal,
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
-                color: Colors.white),
+              fontFamily: 'Kanit',
+              fontStyle: FontStyle.normal,
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
           ),
         ),
       ),

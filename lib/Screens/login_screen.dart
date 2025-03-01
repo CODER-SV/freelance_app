@@ -1,4 +1,5 @@
 import 'package:animated_toggle_switch/animated_toggle_switch.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:nescafe_flutter/Screens/home_screen.dart';
@@ -147,7 +148,7 @@ class _LoginScreenState extends State<LoginScreen>
                     ),
                     SizedBox(height: 20),
                     Padding(padding: const EdgeInsets.only(right: 45.0)),
-                    SizedBox(height: screenHeight < 900 ? 173 : 93),
+                    SizedBox(height: screenHeight < 900 ? 93 : 93),
                     Container(
                       height: 110,
                       decoration: BoxDecoration(
@@ -189,6 +190,39 @@ class _hoverFunction extends StatefulWidget {
 }
 
 class _hoverFunctionState extends State<_hoverFunction> {
+  final _auth = FirebaseAuth.instance;
+  late TextEditingController emailController;
+  late TextEditingController passwordController;
+
+  late String email;
+  late String password;
+
+  @override
+  void initState() {
+    super.initState();
+    // Initialize the controllers
+    emailController = TextEditingController();
+    passwordController = TextEditingController();
+  }
+
+  @override
+  void didUpdateWidget(covariant _hoverFunction oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // When switching between Login and SignUp, reset the email and password fields
+    if (widget.isSign != oldWidget.isSign) {
+      emailController.clear(); // Clear email field
+      passwordController.clear(); // Clear password field
+    }
+  }
+
+  @override
+  void dispose() {
+    // Dispose controllers when the widget is disposed
+    emailController.dispose();
+    passwordController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -198,60 +232,42 @@ class _hoverFunctionState extends State<_hoverFunction> {
           height: 47,
           decoration: kboxDecoration,
           child: TextField(
+            controller: emailController,
             keyboardType: TextInputType.emailAddress,
             textAlign: TextAlign.center,
-            onChanged: (value) {},
+            onChanged: (value) {
+              email = value;
+            },
             decoration: kTextFieldInputDecoration.copyWith(
-              hintText: 'Enter your Username',
+              hintText: 'Enter your Email',
             ),
           ),
         ),
         SizedBox(height: 20),
-        widget.isSign
-            ? Container(
-              width: 292,
-              height: 47,
-              decoration: kboxDecoration,
-              child: TextField(
-                textAlign: TextAlign.center,
-                obscureText: true,
-                onChanged: (value) {},
-                decoration: kTextFieldInputDecoration.copyWith(
-                  hintText: 'Enter your Password',
-                ),
-              ),
-            )
-            : Container(
-              width: 292,
-              height: 47,
-              decoration: kboxDecoration,
-              child: TextField(
-                textAlign: TextAlign.center,
-                obscureText: true,
-                onChanged: (value) {},
-                decoration: kTextFieldInputDecoration.copyWith(
-                  hintText: 'Enter your Password',
-                ),
-              ),
+
+        Container(
+          width: 292,
+          height: 47,
+          decoration: kboxDecoration,
+          child: TextField(
+            controller: passwordController,
+            textAlign: TextAlign.center,
+            obscureText: true,
+            onChanged: (value1) {
+              password = value1;
+            },
+            decoration: kTextFieldInputDecoration.copyWith(
+              hintText: 'Enter your Password',
             ),
+          ),
+        ),
+
         SizedBox(height: 15),
         widget.isSign
-            ? Container(
-              width: 292,
-              height: 47,
-              decoration: kboxDecoration,
-              child: TextField(
-                textAlign: TextAlign.center,
-                obscureText: true,
-                onChanged: (value) {},
-                decoration: kTextFieldInputDecoration.copyWith(
-                  hintText: 'Confirm your password',
-                ),
-              ),
-            )
+            ? Container(height: 47)
             : GestureDetector(
               child: Text(
-                'Forget your Username & Password?',
+                'Forget your Password?',
                 style: TextStyle(
                   fontFamily: 'Kanit',
                   fontStyle: FontStyle.normal,
@@ -264,15 +280,49 @@ class _hoverFunctionState extends State<_hoverFunction> {
           text: widget.isSign ? 'Sign up' : 'Login',
           colour: Color(0xff5F4B48),
           textColour: Colors.white,
-          onPressed: () {
-            Navigator.push(
-              context,
-              PageRouteBuilder(
-                transitionDuration: Duration(seconds: 2),
-                pageBuilder:
-                    (context, animation, secondaryAnimation) => HomeScreen(),
-              ),
-            );
+          onPressed: () async {
+            if (widget.isSign) {
+              try {
+                final user = await _auth.createUserWithEmailAndPassword(
+                  email: email,
+                  password: password,
+                );
+                if (user != null) {
+                  Navigator.push(
+                    context,
+                    PageRouteBuilder(
+                      transitionDuration: Duration(seconds: 2),
+                      pageBuilder:
+                          (context, animation, secondaryAnimation) =>
+                              HomeScreen(),
+                    ),
+                  );
+                }
+              } catch (e) {
+                print(e);
+              }
+            } else {
+              try {
+                final user = await _auth.signInWithEmailAndPassword(
+                  email: email,
+                  password: password,
+                );
+                if (user != null) {
+                  Navigator.push(
+                    context,
+                    PageRouteBuilder(
+                      transitionDuration: Duration(seconds: 2),
+                      pageBuilder:
+                          (context, animation, secondaryAnimation) =>
+                              HomeScreen(),
+                    ),
+                  );
+                }
+              } catch (e) {
+                print(e);
+              }
+            }
+            ;
           },
         ),
       ],

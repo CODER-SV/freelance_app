@@ -1,11 +1,18 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:nescafe_flutter/Constants.dart';
 import 'package:nescafe_flutter/Screens/cart_screen.dart';
-import 'package:nescafe_flutter/Screens/customisation_screen.dart';
 import 'package:smooth_page_indicator/smooth_page_indicator.dart';
 import 'package:nescafe_flutter/Components/carousel.dart';
+import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
+
+import '../Components/sections.dart';
+
+final _firestore = FirebaseFirestore.instance;
+late User loggedInUser;
 
 class HomeScreen extends StatefulWidget {
   static const String id = 'home_screen';
@@ -22,7 +29,34 @@ class _HomeScreenState extends State<HomeScreen> {
     Image.asset('assets/images/Property 1=Variant3.png'),
   ];
 
+  String selectedSection = ''; // Default selected section
+  final sectionKeys = GlobalKey();
+
   int myCurrIndex = 0;
+  final _auth = FirebaseAuth.instance;
+
+  late String messageText;
+
+  @override
+  void initState() {
+    super.initState();
+    getCurrentUser();
+  }
+
+  // Scroll to a specific section
+  Future scrollToItem(int index) async {}
+
+  void getCurrentUser() async {
+    try {
+      final user = await _auth.currentUser;
+      if (user != null) {
+        loggedInUser = user;
+      }
+    } catch (e) {
+      print(e);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -37,7 +71,10 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         centerTitle: true,
         leading: IconButton(
-          onPressed: () {},
+          onPressed: () {
+            _auth.signOut();
+            Navigator.pop(context);
+          },
           icon: Icon(Icons.menu, color: Colors.white, size: 36),
         ),
         actions: [
@@ -60,280 +97,164 @@ class _HomeScreenState extends State<HomeScreen> {
       body: Column(
         children: [
           Expanded(
-            child: Container(
-              child: ListView(
-                children: [
-                  SizedBox(height: 20),
-                  Container(
-                    width: 5000,
-                    height: 45,
-                    decoration: BoxDecoration(color: Color(0xff1E130E)),
-                    child: TextField(
-                      decoration: InputDecoration(
-                        prefixIcon: GestureDetector(
-                          onTap: () {},
-                          child: Icon(Icons.search),
-                        ),
-                        hintText: 'Get your fav Nescafe cup now...',
-                        hintStyle: TextStyle(
-                          fontStyle: FontStyle.italic,
-                          fontWeight: FontWeight.w300,
-                          color: Color(0xff8D8D8D),
-                        ),
-                        filled: true,
-                        fillColor: Color(0xffE6DCDB),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.all(Radius.circular(32.0)),
-                        ),
+            child: ListView(
+              children: [
+                SizedBox(height: 20),
+                Container(
+                  width: 5000,
+                  height: 45,
+                  decoration: BoxDecoration(color: Color(0xff1E130E)),
+                  child: TextField(
+                    decoration: InputDecoration(
+                      prefixIcon: GestureDetector(
+                        onTap: () {},
+                        child: Icon(Icons.search),
+                      ),
+                      hintText: 'Get your fav Nescafe cup now...',
+                      hintStyle: TextStyle(
+                        fontStyle: FontStyle.italic,
+                        fontWeight: FontWeight.w300,
+                        color: Color(0xff8D8D8D),
+                      ),
+                      filled: true,
+                      fillColor: Color(0xffE6DCDB),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.all(Radius.circular(32.0)),
                       ),
                     ),
                   ),
-                  Column(
-                    children: [
-                      Container(
-                        padding: EdgeInsets.only(top: 40, bottom: 4),
-                        child: CarouselSlider(
-                          items: image,
-                          options: CarouselOptions(
-                            autoPlay: true,
-                            height: 200,
-                            autoPlayCurve: Curves.fastOutSlowIn,
-                            autoPlayAnimationDuration: Duration(
-                              milliseconds: 800,
-                            ),
-                            autoPlayInterval: Duration(seconds: 2),
-                            enlargeCenterPage: true,
-                            aspectRatio: 2.0,
-                            onPageChanged: (index, reason) {
-                              setState(() {
-                                myCurrIndex = index;
-                              });
-                            },
+                ),
+                Column(
+                  children: [
+                    Container(
+                      padding: EdgeInsets.only(top: 40, bottom: 4),
+                      child: CarouselSlider(
+                        items: image,
+                        options: CarouselOptions(
+                          autoPlay: true,
+                          height: 200,
+                          autoPlayCurve: Curves.fastOutSlowIn,
+                          autoPlayAnimationDuration: Duration(
+                            milliseconds: 800,
                           ),
+                          autoPlayInterval: Duration(seconds: 2),
+                          enlargeCenterPage: true,
+                          aspectRatio: 2.0,
+                          onPageChanged: (index, reason) {
+                            setState(() {
+                              myCurrIndex = index;
+                            });
+                          },
                         ),
                       ),
-                      AnimatedSmoothIndicator(
-                        activeIndex: myCurrIndex,
-                        count: image.length,
+                    ),
+                    AnimatedSmoothIndicator(
+                      activeIndex: myCurrIndex,
+                      count: image.length,
+                    ),
+                  ],
+                ),
+                SizedBox(height: 20),
+                Image.asset('assets/images/Group 24.png'),
+                Container(
+                  padding: EdgeInsets.symmetric(vertical: 5),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          bestSeller(
+                            'assets/images/image.png',
+                            'Caramel Coffee\nFrappe',
+                          ),
+                          bestSeller(
+                            'assets/images/image-1.png',
+                            'Loaded Cheesy\nFries',
+                          ),
+                          bestSeller(
+                            'assets/images/image-2.png',
+                            'Nescafe Gold\nIced coffee',
+                          ),
+                        ],
                       ),
+                      SizedBox(height: 30),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          bestSeller(
+                            'assets/images/image-3.png',
+                            'Mix sauce\nPasta',
+                          ),
+                          bestSeller(
+                            'assets/images/image-4.png',
+                            'Paneer Makhani\nSandwich',
+                          ),
+                          bestSeller(
+                            'assets/images/image-5.png',
+                            'Peri Peri\nMaggi',
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 60),
                     ],
                   ),
-                  SizedBox(height: 20),
-                  Image.asset('assets/images/Group 24.png'),
-                  Container(
-                    padding: EdgeInsets.symmetric(vertical: 5),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            bestSeller(
-                              'assets/images/image.png',
-                              'Caramel Coffee\nFrappe',
-                            ),
-                            bestSeller(
-                              'assets/images/image-1.png',
-                              'Loaded Cheesy\nFries',
-                            ),
-                            bestSeller(
-                              'assets/images/image-2.png',
-                              'Nescafe Gold\nIced coffee',
-                            ),
-                          ],
-                        ),
-                        SizedBox(height: 30),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            bestSeller(
-                              'assets/images/image-3.png',
-                              'Mix sauce\nPasta',
-                            ),
-                            bestSeller(
-                              'assets/images/image-4.png',
-                              'Paneer Makhani\nSandwich',
-                            ),
-                            bestSeller(
-                              'assets/images/image-5.png',
-                              'Peri Peri\nMaggi',
-                            ),
-                          ],
-                        ),
-                        SizedBox(height: 60),
-                      ],
+                ),
+                Container(
+                  alignment: Alignment.center,
+                  padding: EdgeInsets.only(top: 30),
+                  color: Colors.white,
+                  child: Text(
+                    '- Menu -',
+                    style: TextStyle(
+                      fontFamily: 'Kanit',
+                      fontStyle: FontStyle.normal,
+                      fontSize: 26,
                     ),
                   ),
-                  Container(
-                    alignment: Alignment.center,
-                    padding: EdgeInsets.only(top: 30),
-                    color: Colors.white,
-                    child: Text(
-                      '- Menu -',
-                      style: TextStyle(
-                        fontFamily: 'Kanit',
-                        fontStyle: FontStyle.normal,
-                        fontSize: 26,
-                      ),
-                    ),
+                ),
+                Container(
+                  height: 65,
+                  color: Colors.white,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: sections.length,
+                    itemBuilder: (context, index) {
+                      return Carousel(
+                        text: sections[index]['name'],
+                        colour: const Color(0xff1C0F05),
+                        isSelected: selectedSection == sections[index]['name'],
+                        onPressed: () {
+                          setState(() {
+                            selectedSection = sections[index]['name'];
+                          });
+                          scrollToItem(index);
+                        },
+                      );
+                    },
                   ),
-                  Container(
-                    height: 65,
-                    color: Colors.white,
-                    child: ListView(
-                      scrollDirection: Axis.horizontal,
-                      children: [
-                        Carousel(
-                          text: 'Coffee',
-                          colour: Color(0xff1C0F05),
-                          onPressed: () {},
+                ),
+                ...List.generate(sections.length, (index) {
+                  return Column(
+                    key: sectionKeys,
+                    children: [
+                      menuTitle(sections[index]['name']),
+                      if (sections[index]['images'].isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(vertical: 25),
+                          width: 500,
+                          color: Colors.white,
+                          child: Column(
+                            children:
+                                sections[index]['images']
+                                    .map<Widget>((image) => menuImages(image))
+                                    .toList(),
+                          ),
                         ),
-                        Carousel(
-                          text: 'Frappe',
-                          colour: Color(0xff1C0F05),
-                          onPressed: () {},
-                        ),
-                        Carousel(
-                          text: 'Fries',
-                          colour: Color(0xff1C0F05),
-                          onPressed: () {},
-                        ),
-                        Carousel(
-                          text: 'Burger',
-                          colour: Color(0xff1C0F05),
-                          onPressed: () {},
-                        ),
-                        Carousel(
-                          text: 'Wraps',
-                          colour: Color(0xff1C0F05),
-                          onPressed: () {},
-                        ),
-                        Carousel(
-                          text: 'Mojito',
-                          colour: Color(0xff1C0F05),
-                          onPressed: () {},
-                        ),
-                        Carousel(
-                          text: 'Maggie',
-                          colour: Color(0xff1C0F05),
-                          onPressed: () {},
-                        ),
-                        Carousel(
-                          text: 'Krusher',
-                          colour: Color(0xff1C0F05),
-                          onPressed: () {},
-                        ),
-                        Carousel(
-                          text: 'Hot Chocolate',
-                          colour: Color(0xff1C0F05),
-                          onPressed: () {},
-                        ),
-                        Carousel(
-                          text: 'Sweet Corn',
-                          colour: Color(0xff1C0F05),
-                          onPressed: () {},
-                        ),
-                        Carousel(
-                          text: 'Dessert',
-                          colour: Color(0xff1C0F05),
-                          onPressed: () {},
-                        ),
-                        Carousel(
-                          text: 'Pasta',
-                          colour: Color(0xff1C0F05),
-                          onPressed: () {},
-                        ),
-                      ],
-                    ),
-                  ),
-                  menuTitle('Coffee'),
-                  Container(color: Colors.white, child: kDivider),
-                  Container(
-                    padding: EdgeInsets.symmetric(vertical: 25),
-                    color: Colors.white,
-                    child: Column(
-                      children: [
-                        menuImages('cappucino'),
-                        SizedBox(height: 25),
-                        menuImages('espresso'),
-                        SizedBox(height: 25),
-                        menuImages('black coffee'),
-                        SizedBox(height: 25),
-                        menuImages('americano'),
-                        SizedBox(height: 25),
-                        menuImages('cold coffee'),
-                        SizedBox(height: 25),
-                      ],
-                    ),
-                  ),
-                  menuTitle('Frappe'),
-                  Container(color: Colors.white, child: kDivider),
-                  Container(
-                    padding: EdgeInsets.symmetric(vertical: 25),
-                    color: Colors.white,
-                    child: Column(
-                      children: [
-                        menuImages('caramel frappe'),
-                        SizedBox(height: 25),
-                        menuImages('Strawberry-Frappe'),
-                        SizedBox(height: 25),
-                        menuImages('mocha-frappe'),
-                        SizedBox(height: 25),
-                      ],
-                    ),
-                  ),
-                  menuTitle('Fries'),
-                  Container(color: Colors.white, child: kDivider),
-                  Container(
-                    padding: EdgeInsets.symmetric(vertical: 25),
-                    color: Colors.white,
-                    child: Column(
-                      children: [
-                        menuImages('peri fries'),
-                        SizedBox(height: 25),
-                        menuImages('Loaded-Bacon-Cheese-Fries-3'),
-                        SizedBox(height: 25),
-                        menuImages('salted French-fries'),
-                        SizedBox(height: 25),
-                        menuImages('cheesy fries'),
-                        SizedBox(height: 25),
-                        menuImages('mint fries'),
-                        SizedBox(height: 25),
-                      ],
-                    ),
-                  ),
-                  menuTitle('Burger'),
-                  Container(color: Colors.white, child: kDivider),
-                  Container(
-                    padding: EdgeInsets.symmetric(vertical: 25),
-                    color: Colors.white,
-                    child: Column(
-                      children: [
-                        menuImages('Secret-Veg-Cheeseburgers-c981dd6'),
-                        SizedBox(height: 25),
-                        menuImages('schezwan burger'),
-                        SizedBox(height: 25),
-                      ],
-                    ),
-                  ),
-                  menuTitle('Wrap'),
-                  Container(color: Colors.white, child: kDivider),
-                  Container(
-                    padding: EdgeInsets.symmetric(vertical: 25),
-                    color: Colors.white,
-                    child: Column(
-                      children: [
-                        menuImages('veg wrap'),
-                        SizedBox(height: 25),
-                        menuImages('paneer wrap'),
-                        SizedBox(height: 25),
-                        menuImages('schezwan wrap'),
-                        SizedBox(height: 25),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+                    ],
+                  );
+                }),
+              ],
             ),
           ),
         ],
@@ -347,13 +268,20 @@ class menuTitle extends StatelessWidget {
   menuTitle(this.title);
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.only(left: 35, top: 15),
-      color: Colors.white,
-      child: Text(
-        title,
-        style: TextStyle(fontSize: 24, fontWeight: FontWeight.w300),
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: EdgeInsets.only(left: 35, top: 15),
+          width: 500,
+          color: Colors.white,
+          child: Text(
+            title,
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.w300),
+          ),
+        ),
+        Container(color: Colors.white, child: kDivider),
+      ],
     );
   }
 }
@@ -369,40 +297,125 @@ class menuImages extends StatefulWidget {
 class _menuImagesState extends State<menuImages> {
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () {
-        Navigator.pushNamed(context, CustomisationScreen.id);
-      },
-      child: Container(
-        width: 370,
-        height: 213,
-        decoration: BoxDecoration(
-          image: DecorationImage(
-            image: AssetImage('assets/images/menu/${widget.image}.jpg'),
-            fit: BoxFit.cover,
+    return Column(
+      children: [
+        Container(
+          width: 370,
+          height: 213,
+          decoration: BoxDecoration(
+            image: DecorationImage(
+              image: AssetImage('assets/images/menu/${widget.image}.jpg'),
+              fit: BoxFit.cover,
+            ),
+            borderRadius: BorderRadius.all(Radius.circular(9)),
           ),
-          borderRadius: BorderRadius.all(Radius.circular(9)),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            Opacity(
-              opacity: 0.75,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Color(0xffD9D9D9),
-                  borderRadius: BorderRadius.only(
-                    topRight: Radius.circular(9),
-                    topLeft: Radius.circular(9),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.end,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Opacity(
+                opacity: 0.75,
+                child: Container(
+                  padding: EdgeInsets.only(top: 5),
+                  width: 100,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: Color(0xffD9D9D9),
+                    borderRadius: BorderRadius.only(
+                      bottomLeft: Radius.circular(32),
+                      topLeft: Radius.circular(32),
+                    ),
+                  ),
+                  child: Text(
+                    'Customize',
+                    style: TextStyle(
+                      fontFamily: 'Kanit',
+                      fontStyle: FontStyle.normal,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
                   ),
                 ),
-                width: 370,
-                height: 42,
               ),
-            ),
-          ],
+              SizedBox(height: 20),
+              Opacity(
+                opacity: 0.75,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Color(0xffD9D9D9),
+                    borderRadius: BorderRadius.only(
+                      topRight: Radius.circular(9),
+                      topLeft: Radius.circular(9),
+                    ),
+                  ),
+                  width: 370,
+                  height: 42,
+                  child: Row(
+                    children: [
+                      Container(
+                        child: Column(children: [Text('data'), Text('data')]),
+                      ),
+                      Container(),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
+        SizedBox(height: 25),
+      ],
+    );
+  }
+}
+
+class menuImagesDuplicate extends StatefulWidget {
+  late final String image;
+  menuImagesDuplicate(this.image);
+
+  @override
+  State<menuImagesDuplicate> createState() => _menuImagesDuplicateState();
+}
+
+class _menuImagesDuplicateState extends State<menuImagesDuplicate> {
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Container(
+          width: 370,
+          height: 213,
+          decoration: BoxDecoration(
+            image: DecorationImage(
+              image: AssetImage('assets/images/menu/${widget.image}.jpg'),
+              fit: BoxFit.cover,
+            ),
+            borderRadius: BorderRadius.all(Radius.circular(9)),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              Container(width: 100, height: 25, color: Colors.red),
+              Opacity(
+                opacity: 0.75,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Color(0xffD9D9D9),
+                    borderRadius: BorderRadius.only(
+                      topRight: Radius.circular(9),
+                      topLeft: Radius.circular(9),
+                    ),
+                  ),
+                  width: 370,
+                  height: 42,
+                ),
+              ),
+            ],
+          ),
+        ),
+        SizedBox(height: 25),
+      ],
     );
   }
 }

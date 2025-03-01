@@ -73,7 +73,7 @@ class CartScreen extends StatelessWidget {
                           color: Colors.black,
                           fontSize: 18,
                           fontStyle: FontStyle.italic,
-                          fontWeight: FontWeight.w200,
+                          fontWeight: FontWeight.w100,
                         ),
                       ),
                       Divider(color: Colors.black, height: 10, thickness: 0.5),
@@ -134,7 +134,7 @@ class CartScreen extends StatelessWidget {
                           ),
                         ),
                         Container(
-                          width: screenHeight < 900 ? 118 : 155,
+                          width: screenHeight < 900 ? 118 : 145,
                           child: Text(
                             'Rs 525',
                             textAlign: TextAlign.end,
@@ -190,7 +190,7 @@ class orderList extends StatelessWidget {
                 ),
               ),
               Container(
-                width: screenHeight < 900 ? 118 : 155,
+                width: screenHeight < 900 ? 118 : 145,
                 child: Text(
                   price,
                   textAlign: TextAlign.end,

@@ -6,8 +6,11 @@ import 'package:nescafe_flutter/Screens/sigin_screens.dart';
 import 'package:nescafe_flutter/Screens/splash_screen.dart';
 import 'package:nescafe_flutter/Screens/welcome_screen_first.dart';
 import 'package:nescafe_flutter/Screens/login_screen.dart';
+import 'package:firebase_core/firebase_core.dart';
 
 void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
   runApp(const MyApp());
 }
 
