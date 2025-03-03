@@ -73,6 +73,7 @@ flutter:
       - assets/videos/video.mp4
       - assets/nescafe_animation.gif
       - assets/images/logo2.png
+      - assets/images/Group 31.png
       - assets/images/facebook_logo.png
       - assets/images/googlelogo.png
       - assets/images/Property 1=Default.png
@@ -98,6 +99,10 @@ flutter:
   # "family" key with the font family name, and a "fonts" key with a
   # list giving the asset and other descriptors for the font. For
   # example:
+  fonts:
+    - family: Kanit
+      fonts:
+        - asset: assets/fonts/Kanit-Regular.ttf
   # fonts:
   #   - family: Schyler
   #     fonts:
