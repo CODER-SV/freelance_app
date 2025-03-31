@@ -6,15 +6,24 @@ import 'package:carousel_slider/carousel_slider.dart';
 import 'package:nescafe_flutter/Components/roundedButton.dart';
 import 'package:nescafe_flutter/Constants.dart';
 import 'package:nescafe_flutter/Screens/cart_screen.dart';
+import 'package:provider/provider.dart';
 import 'package:smooth_page_indicator/smooth_page_indicator.dart';
-import 'package:nescafe_flutter/Components/carousel.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
-import '../Components/sections.dart';
+import '../provider/cart_provider.dart';
 
 final _auth = FirebaseAuth.instance;
 final _firestore = FirebaseFirestore.instance;
 late User loggedInUser;
+final ItemScrollController _scrollController = ItemScrollController();
+
+void scrollToSection(int index) {
+  _scrollController.scrollTo(
+    index: index,
+    duration: Duration(milliseconds: 500),
+    curve: Curves.easeInOut,
+  );
+}
 
 class HomeScreen extends StatefulWidget {
   static const String id = 'home_screen';
@@ -32,7 +41,6 @@ class _HomeScreenState extends State<HomeScreen> {
   ];
 
   String selectedSection = ''; // Default selected section
-  final sectionKeys = GlobalKey();
 
   int myCurrIndex = 0;
 
@@ -42,10 +50,34 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     getCurrentUser();
+    //retrieveAll();
   }
 
-  // Scroll to a specific section
-  Future scrollToItem(int index) async {}
+  // void retrieveAll() {
+  //   _firestore
+  //       .collection('sections')
+  //       .get()
+  //       .then(
+  //         (value) => {
+  //           value.docs.forEach((result) {
+  //             print(result.id);
+  //             _firestore
+  //                 .collection('sections')
+  //                 .doc(result.id)
+  //                 .collection('item')
+  //                 .get()
+  //                 .then(
+  //                   (subCol) => {
+  //                     subCol.docs.forEach((elements) {
+  //                       print(elements.id);
+  //                       print(elements.data());
+  //                     }),
+  //                   },
+  //                 );
+  //           }),
+  //         },
+  //       );
+  // }
 
   void getCurrentUser() async {
     try {
@@ -116,19 +148,49 @@ class _HomeScreenState extends State<HomeScreen> {
           icon: Icon(Icons.menu, color: Colors.white, size: 36),
         ),
         actions: [
-          IconButton(
-            onPressed: () {
-              Navigator.pushNamed(context, CartScreen.id);
+          Consumer<CartProvider>(
+            builder: (context, cartProvider, child) {
+              return ValueListenableBuilder<int>(
+                valueListenable: cartProvider.cartItemCount, // 🟢 Updated count
+                builder: (context, value, child) {
+                  return IconButton(
+                    icon: Stack(
+                      children: [
+                        Icon(
+                          value > 0
+                              ? CupertinoIcons.cart_fill
+                              : CupertinoIcons.cart,
+                          color: Colors.white,
+                          size: 38,
+                        ),
+                        if (value > 0)
+                          Positioned(
+                            right: 0,
+                            top: 0,
+                            child: Container(
+                              padding: EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: Colors.red,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Text(
+                                '$value',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    onPressed: () {
+                      Navigator.pushNamed(context, CartScreen.id);
+                    },
+                  );
+                },
+              );
             },
-            icon: Icon(CupertinoIcons.cart, color: Colors.white, size: 38),
-          ),
-          IconButton(
-            onPressed: () {},
-            icon: Icon(
-              CupertinoIcons.profile_circled,
-              color: Colors.white,
-              size: 38,
-            ),
           ),
         ],
       ),
@@ -251,61 +313,106 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 ),
-                Container(
-                  height: 65,
-                  color: Colors.white,
-                  child: ListView.builder(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: sections.length,
-                    itemBuilder: (context, index) {
-                      return Carousel(
-                        text: sections[index]['name'],
-                        colour: const Color(0xff1C0F05),
-                        isSelected: selectedSection == sections[index]['name'],
-                        onPressed: () {
-                          setState(() {
-                            selectedSection = sections[index]['name'];
-                          });
-                          scrollToItem(index);
+                StreamBuilder(
+                  stream: _firestore.collection('sections').snapshots(),
+                  builder: (
+                    BuildContext context,
+                    AsyncSnapshot<QuerySnapshot> snapshot,
+                  ) {
+                    if (!snapshot.hasData) {
+                      return Center(child: CircularProgressIndicator());
+                    }
+
+                    return Container(
+                      height: 650,
+                      child: ScrollablePositionedList.builder(
+                        itemScrollController: _scrollController,
+                        itemCount: snapshot.data!.docs.length,
+                        itemBuilder: (context, index) {
+                          var sectionDoc = snapshot.data!.docs[index];
+
+                          return Column(
+                            children: [
+                              menuTitle(sectionDoc.id),
+                              StreamBuilder(
+                                stream:
+                                    _firestore
+                                        .collection('sections')
+                                        .doc(sectionDoc.id)
+                                        .collection('item')
+                                        .snapshots(),
+                                builder: (
+                                  context,
+                                  AsyncSnapshot<QuerySnapshot> itemSnapshot,
+                                ) {
+                                  if (!itemSnapshot.hasData) {
+                                    return CircularProgressIndicator();
+                                  }
+                                  if (itemSnapshot.data!.docs.isEmpty) {
+                                    return SizedBox.shrink(); // Agar koi item nahi hai toh empty
+                                  }
+
+                                  return Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 25,
+                                    ),
+                                    width: 500,
+                                    color: Colors.white,
+                                    child: Column(
+                                      children: List.generate(
+                                        itemSnapshot.data!.docs.length,
+                                        (i) {
+                                          var itemDoc =
+                                              itemSnapshot.data!.docs[i];
+                                          var itemData =
+                                              itemDoc.data()
+                                                  as Map<String, dynamic>;
+
+                                          return (itemData['useDuplicate'] ==
+                                                  true)
+                                              ? menuImagesDuplicate(
+                                                itemData['images'] ?? "",
+                                                itemDoc
+                                                    .id, // 🔥 Item name from Document ID
+                                                int.tryParse(
+                                                      itemData['price']
+                                                          .toString(),
+                                                    ) ??
+                                                    0, // 🔥 Convert String to Int
+                                                int.tryParse(
+                                                      itemData['priceRegular']
+                                                          .toString(),
+                                                    ) ??
+                                                    0,
+                                                int.tryParse(
+                                                      itemData['priceLarge']
+                                                          .toString(),
+                                                    ) ??
+                                                    0,
+                                              )
+                                              : menuImages(
+                                                itemData['images'] ?? "",
+                                                itemDoc
+                                                    .id, // 🔥 Item name from Document ID
+                                                int.tryParse(
+                                                      itemData['price']
+                                                          .toString(),
+                                                    ) ??
+                                                    0,
+                                              );
+                                        },
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ],
+                          );
                         },
-                      );
-                    },
-                  ),
+                      ),
+                    );
+                  },
                 ),
-                ...List.generate(sections.length, (index) {
-                  return Column(
-                    children: [
-                      menuTitle(sections[index]['name']),
-                      if (sections[index]['images'].isNotEmpty)
-                        Container(
-                          padding: const EdgeInsets.symmetric(vertical: 25),
-                          width: 500,
-                          color: Colors.white,
-                          child: Column(
-                            children: List.generate(
-                              sections[index]['images'].length,
-                              (i) {
-                                return sections[index]['useDuplicate'][i] ==
-                                        true
-                                    ? menuImagesDuplicate(
-                                      sections[index]['images'][i],
-                                      sections[index]['item'][i],
-                                      sections[index]['price'][i],
-                                      sections[index]['priceRegular'][i], // ✅ Pass Regular Price
-                                      sections[index]['priceLarge'][i], // ✅ Pass Large Price
-                                    )
-                                    : menuImages(
-                                      sections[index]['images'][i],
-                                      sections[index]['item'][i],
-                                      sections[index]['price'][i],
-                                    );
-                              },
-                            ),
-                          ),
-                        ),
-                    ],
-                  );
-                }),
               ],
             ),
           ),
@@ -381,14 +488,17 @@ class _FloatingMenuButtonState extends State<FloatingMenuButton>
                 width: 230,
                 child: CompositedTransformFollower(
                   link: _layerLink,
-                  offset: Offset(-160, -280), // Position above FAB
+                  offset: Offset(-160, -250), // Position above FAB
                   child: SlideTransition(
                     position: _animation,
                     child: Material(
                       color: Colors.transparent,
                       child: Container(
-                        padding: EdgeInsets.all(10),
-                        height: 300, // Adjust height based on content
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 8,
+                        ),
+                        height: 250, // Reduced height to make it compact
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(12),
@@ -401,40 +511,106 @@ class _FloatingMenuButtonState extends State<FloatingMenuButton>
                           ],
                         ),
                         child: Column(
-                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text(
-                              "Menu Sections",
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
+                            // Title with Less Padding
+                            Padding(
+                              padding: const EdgeInsets.only(
+                                bottom: 5,
+                              ), // Less gap
+                              child: Text(
+                                "Menu Sections",
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
-                            Divider(thickness: 1),
+                            Divider(
+                              color: Colors.black,
+                              thickness: 0.5,
+                              indent: 35,
+                              endIndent: 35,
+                            ),
 
-                            // Scrollable List of Sections
                             Expanded(
-                              child: ListView.builder(
-                                shrinkWrap: true,
-                                itemCount: sections.length,
-                                itemBuilder: (context, index) {
-                                  return ListTile(
-                                    title: Text(
-                                      sections[index]['name'],
-                                      style: TextStyle(fontSize: 14),
-                                    ),
-                                    leading: Icon(
-                                      Icons.restaurant_menu,
-                                      color: Colors.brown,
-                                    ),
-                                    onTap: () {
-                                      print(
-                                        "${sections[index]['name']} Selected",
+                              child: SizedBox(
+                                width:
+                                    double
+                                        .infinity, // Ensures ListView takes full width
+                                height:
+                                    double
+                                        .infinity, // Ensures it fills remaining space
+                                child: StreamBuilder(
+                                  stream:
+                                      _firestore
+                                          .collection('sections')
+                                          .snapshots(), // ✅ Fetch sections dynamically
+                                  builder: (
+                                    context,
+                                    AsyncSnapshot<QuerySnapshot> snapshot,
+                                  ) {
+                                    if (!snapshot.hasData) {
+                                      return Center(
+                                        child: CircularProgressIndicator(),
                                       );
-                                      _toggleMenu(); // Close on selection
-                                    },
-                                  );
-                                },
+                                    }
+
+                                    var sectionDocs =
+                                        snapshot
+                                            .data!
+                                            .docs; // ✅ List of section documents
+
+                                    return ListView.builder(
+                                      itemCount: sectionDocs.length,
+                                      padding:
+                                          EdgeInsets
+                                              .zero, // Removes unwanted padding
+                                      itemBuilder: (context, index) {
+                                        return GestureDetector(
+                                          onTap: () {
+                                            print(
+                                              "${sectionDocs[index].id} Selected",
+                                            ); // ✅ Firestore se section ka naam
+                                            _toggleMenu(); // Close the menu
+                                            Future.delayed(
+                                              Duration(milliseconds: 300),
+                                              () {
+                                                scrollToSection(
+                                                  index,
+                                                ); // Scroll after the menu closes
+                                              },
+                                            );
+                                          },
+                                          child: Padding(
+                                            padding: const EdgeInsets.symmetric(
+                                              vertical: 8.0,
+                                              horizontal: 12.0,
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                Icon(
+                                                  Icons.restaurant_menu,
+                                                  color: Colors.brown,
+                                                  size: 20,
+                                                ),
+                                                SizedBox(
+                                                  width: 10,
+                                                ), // Space between icon and text
+                                                Text(
+                                                  sectionDocs[index]
+                                                      .id, // ✅ Firestore ka section name
+                                                  style: TextStyle(
+                                                    fontSize: 14,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    );
+                                  },
+                                ),
                               ),
                             ),
                           ],
@@ -480,9 +656,15 @@ class _FloatingMenuButtonState extends State<FloatingMenuButton>
 class popUpCustomize extends StatefulWidget {
   late final int regularPrice;
   late final int largePrice;
+  late final String selectedSize;
   final Function(String, int) onSizeSelected; // Callback function
 
-  popUpCustomize(this.regularPrice, this.largePrice, this.onSizeSelected);
+  popUpCustomize(
+    this.regularPrice,
+    this.largePrice,
+    this.selectedSize,
+    this.onSizeSelected,
+  );
 
   @override
   State<popUpCustomize> createState() => _popUpCustomizeState();
@@ -490,6 +672,11 @@ class popUpCustomize extends StatefulWidget {
 
 class _popUpCustomizeState extends State<popUpCustomize> {
   String? selectedSize; // To store selected option
+  @override
+  void initState() {
+    super.initState();
+    selectedSize = widget.selectedSize; // ✅ Set initial selection
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -532,7 +719,9 @@ class _popUpCustomizeState extends State<popUpCustomize> {
                   value: selectedSize == 'Regular',
                   onChanged: (bool? value) {
                     setState(() {
-                      selectedSize = value! ? 'Regular' : null;
+                      if (selectedSize != 'Regular') {
+                        selectedSize = 'Regular';
+                      }
                     });
                   },
                 ),
@@ -559,7 +748,9 @@ class _popUpCustomizeState extends State<popUpCustomize> {
                   value: selectedSize == 'Large',
                   onChanged: (bool? value) {
                     setState(() {
-                      selectedSize = value! ? 'Large' : null;
+                      if (selectedSize != 'Large') {
+                        selectedSize = 'Large';
+                      }
                     });
                   },
                 ),
@@ -578,19 +769,19 @@ class _popUpCustomizeState extends State<popUpCustomize> {
                 width: 88,
                 height: 66,
                 child: RoundedButton(
-                  text: 'Back',
+                  text: 'Okay',
                   colour: Color(0xff7C6565),
                   textColour: Colors.white,
                   onPressed: () {
-                    int selectedPrice =
-                        selectedSize == 'Regular'
-                            ? widget.regularPrice
-                            : widget.largePrice;
-                    widget.onSizeSelected(
-                      selectedSize!,
-                      selectedPrice,
-                    ); // ✅ Pass data back
-                    Navigator.pop(context);
+                    if (selectedSize != null) {
+                      int selectedPrice =
+                          selectedSize == 'Regular'
+                              ? widget.regularPrice
+                              : widget.largePrice;
+
+                      widget.onSizeSelected(selectedSize!, selectedPrice);
+                      Navigator.pop(context);
+                    }
                   },
                 ),
               ),
@@ -747,8 +938,13 @@ class menuImages extends StatefulWidget {
 }
 
 class _menuImagesState extends State<menuImages> {
+  int quantity = 0;
   @override
   Widget build(BuildContext context) {
+    final cartProvider = Provider.of<CartProvider>(context);
+
+    // 🛒 Hamesha latest quantity Provider se lo
+    int quantity = cartProvider.getQuantity(widget.item, null);
     return Column(
       children: [
         Container(
@@ -756,7 +952,9 @@ class _menuImagesState extends State<menuImages> {
           height: 213,
           decoration: BoxDecoration(
             image: DecorationImage(
-              image: AssetImage('assets/images/menu/${widget.image}.jpg'),
+              image: NetworkImage(
+                'https://drive.google.com/uc?export=view&id=${widget.image}',
+              ),
               fit: BoxFit.cover,
             ),
             borderRadius: BorderRadius.all(Radius.circular(9)),
@@ -807,21 +1005,101 @@ class _menuImagesState extends State<menuImages> {
                         ),
                       ),
                     ),
-                    Container(
-                      width: 90,
-                      height: 30,
-                      decoration: BoxDecoration(
-                        color: Color(0xffF9D7D7),
-                        borderRadius: BorderRadius.all(Radius.circular(21)),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text('Add'),
-                          SizedBox(width: 5),
-                          Icon(Icons.add),
-                        ],
-                      ),
+                    GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          if (quantity == 0) {
+                            quantity = 1;
+
+                            // Cart mein item add karo
+                            Provider.of<CartProvider>(
+                              context,
+                              listen: false,
+                            ).addToCart(
+                              name: widget.item, // Item ka naam
+                              image: widget.image, // Item ki image URL
+                              price: widget.price, // Item ka price
+                            );
+                          }
+                        });
+                      },
+                      child:
+                          quantity == 0
+                              ? Container(
+                                width: 90,
+                                height: 30,
+                                decoration: BoxDecoration(
+                                  color: Color(0xffF9D7D7),
+                                  borderRadius: BorderRadius.all(
+                                    Radius.circular(21),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text('Add'),
+                                    SizedBox(width: 5),
+                                    Icon(Icons.add),
+                                  ],
+                                ),
+                              )
+                              : Container(
+                                width: 90,
+                                height: 30,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(21),
+                                  color: Color(0xffF9D7D7),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceEvenly,
+                                  children: [
+                                    GestureDetector(
+                                      onTap: () {
+                                        setState(() {
+                                          if (quantity > 0) {
+                                            // Call the removeFromCart method from CartProvider
+                                            Provider.of<CartProvider>(
+                                              context,
+                                              listen: false,
+                                            ).removeFromCart(
+                                              name:
+                                                  widget
+                                                      .item, // pass the item name
+                                              size:
+                                                  null, // pass size if needed, or pass null
+                                            );
+                                            quantity--; // Decrease the quantity
+                                          }
+                                        });
+                                      },
+                                      child: Icon(Icons.remove),
+                                    ),
+                                    Text(
+                                      '$quantity',
+                                      style: TextStyle(fontSize: 18),
+                                    ),
+                                    GestureDetector(
+                                      onTap: () {
+                                        setState(() {
+                                          quantity++;
+
+                                          // Cart mein item add karo jab quantity increase ho
+                                          Provider.of<CartProvider>(
+                                            context,
+                                            listen: false,
+                                          ).addToCart(
+                                            name: widget.item,
+                                            image: widget.image,
+                                            price: widget.price,
+                                          );
+                                        });
+                                      },
+                                      child: Icon(Icons.add),
+                                    ),
+                                  ],
+                                ),
+                              ),
                     ),
                   ],
                 ),
@@ -855,7 +1133,8 @@ class menuImagesDuplicate extends StatefulWidget {
 
 class _menuImagesDuplicateState extends State<menuImagesDuplicate> {
   String _selectedSize = 'Regular'; // Default selection
-  late int _selectedPrice; // Dynamic price
+  late int _selectedPrice;
+  int quantity = 0; // Dynamic price
 
   @override
   void initState() {
@@ -880,16 +1159,41 @@ class _menuImagesDuplicateState extends State<menuImagesDuplicate> {
               left: 150,
               child: Material(
                 color: Colors.transparent,
-                child: popUpCustomize(widget.regularPrice, widget.largePrice, (
-                  String selectedSize,
-                  int selectedPrice,
-                ) {
-                  // Callback function
-                  setState(() {
-                    _selectedSize = selectedSize;
-                    _selectedPrice = selectedPrice;
-                  });
-                }),
+                child: popUpCustomize(
+                  widget.regularPrice,
+                  widget.largePrice,
+                  _selectedSize,
+                  (String selectedSize, int selectedPrice) {
+                    // Callback function
+                    setState(() {
+                      _selectedSize = selectedSize;
+                      _selectedPrice = selectedPrice;
+                      var cartProvider = Provider.of<CartProvider>(
+                        context,
+                        listen: false,
+                      );
+                      var existingItem = cartProvider.cartDuplicate.firstWhere(
+                        (item) =>
+                            item.name == widget.item &&
+                            item.size == selectedSize,
+                        orElse:
+                            () => CartDuplicateItem(
+                              name: '',
+                              image: '',
+                              price: 0,
+                              size: '',
+                              quantity: 0,
+                            ),
+                      );
+
+                      // 🔹 If item exists, use its quantity; otherwise, reset to 0
+                      quantity =
+                          (existingItem.name.isNotEmpty)
+                              ? existingItem.quantity
+                              : 0; // 🎯 Quantity reset
+                    });
+                  },
+                ),
               ),
             ),
           ],
@@ -915,6 +1219,10 @@ class _menuImagesDuplicateState extends State<menuImagesDuplicate> {
 
   @override
   Widget build(BuildContext context) {
+    final cartProvider = Provider.of<CartProvider>(context);
+
+    // 🛒 Hamesha latest quantity Provider se lo
+    int quantity = cartProvider.getQuantity(widget.item, _selectedSize);
     return Column(
       children: [
         Container(
@@ -922,7 +1230,9 @@ class _menuImagesDuplicateState extends State<menuImagesDuplicate> {
           height: 213,
           decoration: BoxDecoration(
             image: DecorationImage(
-              image: AssetImage('assets/images/menu/${widget.image}.jpg'),
+              image: NetworkImage(
+                'https://drive.google.com/uc?export=view&id=${widget.image}',
+              ),
               fit: BoxFit.cover,
             ),
             borderRadius: BorderRadius.all(Radius.circular(9)),
@@ -1004,21 +1314,98 @@ class _menuImagesDuplicateState extends State<menuImagesDuplicate> {
                         ],
                       ),
                     ),
-                    Container(
-                      width: 90,
-                      height: 30,
-                      decoration: BoxDecoration(
-                        color: Color(0xffF9D7D7),
-                        borderRadius: BorderRadius.all(Radius.circular(21)),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text('Add'),
-                          SizedBox(width: 5),
-                          Icon(Icons.add),
-                        ],
-                      ),
+                    GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          if (quantity == 0) {
+                            quantity = 1;
+                            Provider.of<CartProvider>(
+                              context,
+                              listen: false,
+                            ).addToCart(
+                              name: widget.item,
+                              image: widget.image,
+                              price: _selectedPrice,
+                              size: _selectedSize,
+                            );
+                          }
+                        });
+                      },
+                      child:
+                          quantity == 0
+                              ? Container(
+                                width: 90,
+                                height: 30,
+                                decoration: BoxDecoration(
+                                  color: Color(0xffF9D7D7),
+                                  borderRadius: BorderRadius.all(
+                                    Radius.circular(21),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text('Add'),
+                                    SizedBox(width: 5),
+                                    Icon(Icons.add),
+                                  ],
+                                ),
+                              )
+                              : Container(
+                                width: 90,
+                                height: 30,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(21),
+                                  color: Color(0xffF9D7D7),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceEvenly,
+                                  children: [
+                                    GestureDetector(
+                                      onTap: () {
+                                        setState(() {
+                                          if (quantity > 0) {
+                                            Provider.of<CartProvider>(
+                                              context,
+                                              listen: false,
+                                            ).removeFromCart(
+                                              name:
+                                                  widget
+                                                      .item, // pass the item name
+                                              size:
+                                                  _selectedSize, // pass size if needed, or pass null
+                                            );
+                                            quantity--;
+                                          }
+                                        });
+                                      },
+                                      child: Icon(Icons.remove),
+                                    ),
+                                    Text(
+                                      '$quantity',
+                                      style: TextStyle(fontSize: 18),
+                                    ),
+                                    GestureDetector(
+                                      onTap: () {
+                                        setState(() {
+                                          Provider.of<CartProvider>(
+                                            context,
+                                            listen: false,
+                                          ).addToCart(
+                                            name: widget.item,
+                                            image: widget.image,
+                                            price: widget.price,
+                                            size: _selectedSize,
+                                          );
+                                          quantity++;
+                                        });
+                                      },
+                                      child: Icon(Icons.add),
+                                    ),
+                                  ],
+                                ),
+                              ),
                     ),
                   ],
                 ),
