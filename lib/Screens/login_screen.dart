@@ -1,10 +1,11 @@
+import 'dart:async';
 import 'package:animated_toggle_switch/animated_toggle_switch.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:nescafe_flutter/Screens/home_screen.dart';
 import 'package:nescafe_flutter/Constants.dart';
 import 'package:nescafe_flutter/Components/roundedButton.dart';
+import 'package:nescafe_flutter/Screens/loading_screen.dart';
 
 bool svalue = false;
 late String phoneNumber;
@@ -190,6 +191,112 @@ class _hoverFunction extends StatefulWidget {
 }
 
 class _hoverFunctionState extends State<_hoverFunction> {
+  void showEmailVerificationDialog(BuildContext context, User user) {
+    bool isChecking = false;
+    bool isResending = false;
+    int resendCooldown = 0;
+    Timer? cooldownTimer;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext dialogContext) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setState) {
+            // Start cooldown timer from within the StatefulBuilder
+            void startCooldown() {
+              resendCooldown = 30;
+              cooldownTimer = Timer.periodic(Duration(seconds: 1), (timer) {
+                if (resendCooldown > 0) {
+                  setState(() {
+                    resendCooldown--;
+                  });
+                } else {
+                  timer.cancel();
+                }
+              });
+            }
+
+            return AlertDialog(
+              title: Text("Verify your Email"),
+              content: Text(
+                "A verification email has been sent to ${user.email}. Please verify it, then click below to proceed.",
+              ),
+              actions: [
+                TextButton(
+                  onPressed:
+                      isChecking
+                          ? null
+                          : () async {
+                            setState(() {
+                              isChecking = true;
+                            });
+
+                            await user.reload();
+                            final refreshedUser =
+                                FirebaseAuth.instance.currentUser;
+
+                            if (refreshedUser != null &&
+                                refreshedUser.emailVerified) {
+                              Navigator.of(dialogContext).pop();
+                              Navigator.pushReplacement(
+                                dialogContext,
+                                MaterialPageRoute(
+                                  builder: (context) => LoadingScreen(),
+                                ),
+                              );
+                            } else {
+                              setState(() {
+                                isChecking = false;
+                              });
+                              ScaffoldMessenger.of(dialogContext).showSnackBar(
+                                SnackBar(
+                                  content: Text("Email not verified yet!"),
+                                ),
+                              );
+                            }
+                          },
+                  child: Text(isChecking ? "Checking..." : "I have verified"),
+                ),
+                TextButton(
+                  onPressed:
+                      (resendCooldown > 0 || isResending)
+                          ? null
+                          : () async {
+                            setState(() {
+                              isResending = true;
+                            });
+
+                            await user.sendEmailVerification();
+
+                            setState(() {
+                              isResending = false;
+                            });
+
+                            ScaffoldMessenger.of(dialogContext).showSnackBar(
+                              SnackBar(
+                                content: Text("Verification email resent!"),
+                              ),
+                            );
+
+                            startCooldown();
+                          },
+                  child: Text(
+                    isResending
+                        ? "Resending..."
+                        : resendCooldown > 0
+                        ? "Resend Email (${resendCooldown}s)"
+                        : "Resend Email",
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   final _auth = FirebaseAuth.instance;
   late TextEditingController emailController;
   late TextEditingController passwordController;
@@ -264,17 +371,68 @@ class _hoverFunctionState extends State<_hoverFunction> {
 
         SizedBox(height: 15),
         widget.isSign
-            ? Container(height: 47)
+            ? Container(
+              height: 47,
+              alignment: Alignment.topLeft,
+              padding: EdgeInsets.symmetric(horizontal: 50),
+              child: Text(
+                'Minimum password length should be 6',
+                textAlign: TextAlign.left,
+                style: TextStyle(
+                  fontSize: 9,
+                  fontFamily: 'Kanit',
+                  fontStyle: FontStyle.normal,
+                  fontWeight: FontWeight.w100,
+                ),
+              ),
+            )
             : GestureDetector(
+              onTap: () async {
+                if (emailController.text.isEmpty ||
+                    !emailController.text.contains('@')) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        "Please enter a valid email address first.",
+                      ),
+                    ),
+                  );
+                  return;
+                }
+
+                try {
+                  await _auth.sendPasswordResetEmail(
+                    email: emailController.text.trim(),
+                  );
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        "Password reset email sent! Check your inbox.",
+                      ),
+                    ),
+                  );
+                } on FirebaseAuthException catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text("Error: ${e.message}")),
+                  );
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text("Something went wrong. Try again.")),
+                  );
+                }
+              },
               child: Text(
                 'Forget your Password?',
                 style: TextStyle(
                   fontFamily: 'Kanit',
                   fontStyle: FontStyle.normal,
                   fontSize: 12,
+                  decoration: TextDecoration.underline,
                 ),
               ),
             ),
+
         SizedBox(height: widget.isSign ? 100 : 130),
         RoundedButton(
           text: widget.isSign ? 'Sign up' : 'Login',
@@ -283,43 +441,121 @@ class _hoverFunctionState extends State<_hoverFunction> {
           onPressed: () async {
             if (widget.isSign) {
               try {
-                final user = await _auth.createUserWithEmailAndPassword(
-                  email: email,
-                  password: password,
-                );
-                if (user != null) {
-                  Navigator.push(
-                    context,
-                    PageRouteBuilder(
-                      transitionDuration: Duration(seconds: 2),
-                      pageBuilder:
-                          (context, animation, secondaryAnimation) =>
-                              HomeScreen(),
+                final userCredential = await _auth
+                    .createUserWithEmailAndPassword(
+                      email: email,
+                      password: password,
+                    );
+                final user = userCredential.user;
+
+                if (user != null && !user.emailVerified) {
+                  await user.sendEmailVerification();
+                  showEmailVerificationDialog(context, user);
+                }
+              } on FirebaseAuthException catch (e) {
+                if (e.code == 'email-already-in-use') {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        "Account already exists! Try logging in instead.",
+                      ),
+                      backgroundColor: Colors.redAccent,
+                    ),
+                  );
+                } else if (e.code == 'weak-password') {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        "Weak password. Please choose a stronger one.",
+                      ),
+                      backgroundColor: Colors.redAccent,
+                    ),
+                  );
+                } else if (e.code == 'invalid-email') {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text("Invalid email format."),
+                      backgroundColor: Colors.redAccent,
+                    ),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text("Signup failed: ${e.message}"),
+                      backgroundColor: Colors.redAccent,
                     ),
                   );
                 }
               } catch (e) {
-                print(e);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text("Something went wrong: $e"),
+                    backgroundColor: Colors.redAccent,
+                  ),
+                );
               }
             } else {
               try {
-                final user = await _auth.signInWithEmailAndPassword(
+                final userCredential = await _auth.signInWithEmailAndPassword(
                   email: email,
                   password: password,
                 );
+
+                final user = userCredential.user;
+
                 if (user != null) {
+                  if (!user.emailVerified) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          "Please verify your email before logging in.",
+                        ),
+                        backgroundColor: Colors.orange,
+                      ),
+                    );
+                    return;
+                  }
+
                   Navigator.push(
                     context,
                     PageRouteBuilder(
                       transitionDuration: Duration(seconds: 2),
                       pageBuilder:
                           (context, animation, secondaryAnimation) =>
-                              HomeScreen(),
+                              LoadingScreen(),
+                    ),
+                  );
+                }
+              } on FirebaseAuthException catch (e) {
+                if (e.code == 'user-not-found') {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text("No user found with this email."),
+                      backgroundColor: Colors.redAccent,
+                    ),
+                  );
+                } else if (e.code == 'wrong-password') {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text("Incorrect password."),
+                      backgroundColor: Colors.redAccent,
+                    ),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text("Login failed: ${e.message}"),
+                      backgroundColor: Colors.redAccent,
                     ),
                   );
                 }
               } catch (e) {
-                print(e);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text("Something went wrong: $e"),
+                    backgroundColor: Colors.redAccent,
+                  ),
+                );
               }
             }
             ;

@@ -1,8 +1,18 @@
+import 'dart:async';
+import 'dart:math';
+import 'package:animated_toggle_switch/animated_toggle_switch.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:nescafe_flutter/Components/roundedButton.dart';
+import 'package:nescafe_flutter/Screens/order_confirmation_screen.dart';
 import 'package:provider/provider.dart';
-
 import '../provider/cart_provider.dart';
+import 'package:razorpay_flutter/razorpay_flutter.dart';
+
+bool switchValue = false;
 
 class CartScreen extends StatefulWidget {
   static const String id = 'cart_screen';
@@ -13,6 +23,683 @@ class CartScreen extends StatefulWidget {
 }
 
 class _CartScreenState extends State<CartScreen> {
+  final _formKey = GlobalKey<FormState>();
+  String customerName = '';
+  String customerPhone = '';
+  void showCustomerDetailsPopup(BuildContext outerContext) {
+    showDialog(
+      context: outerContext,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          title: Text(
+            'Enter Your Details',
+            style: TextStyle(
+              color: Color(0xff7C6565),
+              fontFamily: 'Kanit',
+              fontStyle: FontStyle.normal,
+            ),
+          ),
+          content: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  style: TextStyle(color: Color(0xff7C6565)),
+                  decoration: InputDecoration(
+                    labelText: 'Name',
+                    labelStyle: TextStyle(
+                      color: Color(0xff7C6565),
+                      fontFamily: 'Kanit',
+                      fontStyle: FontStyle.normal,
+                    ),
+                    focusedBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(color: Color(0xff7C6565)),
+                    ),
+                  ),
+                  onChanged: (value) => customerName = value.trim(),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Please enter your name';
+                    }
+                    return null;
+                  },
+                ),
+                TextFormField(
+                  style: TextStyle(color: Color(0xff7C6565)),
+                  decoration: InputDecoration(
+                    labelText: 'Mobile Number',
+                    labelStyle: TextStyle(
+                      color: Color(0xff7C6565),
+                      fontFamily: 'Kanit',
+                      fontStyle: FontStyle.normal,
+                    ),
+                    focusedBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(color: Color(0xff7C6565)),
+                    ),
+                  ),
+                  keyboardType: TextInputType.phone,
+                  maxLength: 10,
+                  onChanged: (value) => customerPhone = value.trim(),
+                  validator: (value) {
+                    if (value == null ||
+                        value.trim().length != 10 ||
+                        !RegExp(r'^[0-9]+$').hasMatch(value)) {
+                      return 'Please enter a valid 10-digit phone number';
+                    }
+                    return null;
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(
+                'Cancel',
+                style: TextStyle(
+                  color: Color(0xff7C6565),
+                  fontFamily: 'Kanit',
+                  fontStyle: FontStyle.normal,
+                ),
+              ),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Color(0xff7C6565),
+              ),
+              onPressed: () async {
+                if (_formKey.currentState!.validate()) {
+                  Navigator.pop(context);
+
+                  // Show loader
+                  showDialog(
+                    context: outerContext,
+                    barrierDismissible: false,
+                    builder:
+                        (context) => Center(child: CircularProgressIndicator()),
+                  );
+
+                  final user = FirebaseAuth.instance.currentUser;
+                  if (user != null) {
+                    // ✅ Save customer data to 'customers' collection for future use
+                    await FirebaseFirestore.instance
+                        .collection('customers')
+                        .doc(user.uid)
+                        .set({
+                          'name': customerName,
+                          'phone': customerPhone,
+                          'email': user.email,
+                          'uid': user.uid,
+                        });
+                  }
+
+                  String? orderId = await saveOrderToFirestore();
+
+                  Navigator.pop(outerContext); // Close loader
+
+                  if (orderId != null) {
+                    await FirebaseFirestore.instance
+                        .collection('orders')
+                        .doc(orderId)
+                        .update({
+                          'customer_name': customerName,
+                          'customer_phone': customerPhone,
+                        });
+
+                    showOrderStatusPopup(outerContext, orderId);
+                  } else {
+                    ScaffoldMessenger.of(outerContext).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          'Failed to place order',
+                          style: TextStyle(color: Color(0xff7C6565)),
+                        ),
+                        backgroundColor: Colors.white,
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  }
+                }
+              },
+              child: Text(
+                'Continue',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontFamily: 'Kanit',
+                  fontStyle: FontStyle.normal,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void showPaymentTimerDialog(
+    BuildContext parentContext,
+    String orderId,
+    double amount,
+  ) {
+    final endTime = DateTime.now().add(Duration(minutes: 2));
+    late Timer timer;
+    bool isTimeUp = false;
+
+    final orderRef = FirebaseFirestore.instance
+        .collection('orders')
+        .doc(orderId);
+
+    // Step 1: Set payment_status = pending
+    orderRef.update({'payment_status': 'pending'});
+
+    showDialog(
+      context: parentContext,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            // Initialize the timer only once
+            timer = Timer.periodic(Duration(seconds: 1), (t) async {
+              final now = DateTime.now();
+              final difference = endTime.difference(now);
+
+              final snap = await orderRef.get();
+              final data = snap.data();
+              final status = data?['payment_status'];
+
+              if (status == 'successful') {
+                t.cancel();
+                if (Navigator.of(dialogContext).canPop()) {
+                  Navigator.of(dialogContext).pop();
+                }
+
+                // Navigate after dialog closes
+                Future.delayed(Duration(milliseconds: 300), () {
+                  if (parentContext.mounted) {
+                    Navigator.push(
+                      parentContext,
+                      PageRouteBuilder(
+                        transitionDuration: Duration(seconds: 2),
+                        pageBuilder:
+                            (_, __, ___) =>
+                                OrderConfirmationScreen(orderId: orderId),
+                      ),
+                    );
+                  }
+                });
+              } else if (difference.isNegative && !isTimeUp) {
+                t.cancel();
+                isTimeUp = true;
+
+                await orderRef.update({
+                  'payment_status': 'cancelled',
+                  'status': 'declined',
+                });
+
+                if (context.mounted) {
+                  setState(() {});
+                }
+              } else {
+                if (context.mounted) {
+                  setState(() {});
+                }
+              }
+            });
+
+            return WillPopScope(
+              onWillPop: () async => false, // Prevent back press
+              child: StatefulBuilder(
+                builder: (context, setState) {
+                  final now = DateTime.now();
+                  final remaining = endTime.difference(now);
+                  final minutes = remaining.inMinutes
+                      .remainder(60)
+                      .toString()
+                      .padLeft(2, '0');
+                  final seconds = remaining.inSeconds
+                      .remainder(60)
+                      .toString()
+                      .padLeft(2, '0');
+
+                  return AlertDialog(
+                    backgroundColor: Colors.white,
+                    title: Text(
+                      isTimeUp ? 'Payment Failed' : 'Payment Processing',
+                      style: TextStyle(
+                        fontFamily: 'Kanit',
+                        color: isTimeUp ? Colors.red : Colors.black,
+                      ),
+                    ),
+                    content: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (!isTimeUp) ...[
+                          Text(
+                            'Please complete your payment within:',
+                            style: TextStyle(fontFamily: 'Kanit'),
+                          ),
+                          SizedBox(height: 16),
+                          Text(
+                            '$minutes:$seconds',
+                            style: TextStyle(
+                              fontSize: 32,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.redAccent,
+                              fontFamily: 'Kanit',
+                            ),
+                          ),
+                          SizedBox(height: 16),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Color(0xff7C6565),
+                              padding: EdgeInsets.symmetric(
+                                horizontal: 24,
+                                vertical: 12,
+                              ),
+                            ),
+                            onPressed: () {
+                              timer.cancel(); // cancel timer
+                              Navigator.of(
+                                dialogContext,
+                              ).pop(); // close this dialog
+
+                              Navigator.push(
+                                context,
+                                PageRouteBuilder(
+                                  transitionDuration: Duration(seconds: 2),
+                                  pageBuilder:
+                                      (_, __, ___) => OrderConfirmationScreen(
+                                        orderId: orderId,
+                                      ),
+                                ),
+                              );
+                            },
+
+                            child: Text(
+                              'Pay Now',
+                              style: TextStyle(
+                                fontFamily: 'Kanit',
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ] else ...[
+                          Text(
+                            'Oops! Your payment was not completed in time.',
+                            style: TextStyle(
+                              fontFamily: 'Kanit',
+                              color: Colors.black87,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          SizedBox(height: 16),
+                          ElevatedButton(
+                            onPressed: () {
+                              Navigator.of(dialogContext).pop();
+
+                              Future.delayed(Duration(milliseconds: 300), () {
+                                if (parentContext.mounted) {
+                                  Navigator.pushReplacement(
+                                    parentContext,
+                                    MaterialPageRoute(
+                                      builder: (_) => CartScreen(),
+                                    ),
+                                  );
+                                }
+                              });
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.redAccent,
+                              padding: EdgeInsets.symmetric(
+                                horizontal: 24,
+                                vertical: 12,
+                              ),
+                            ),
+                            child: Text(
+                              'Try Again',
+                              style: TextStyle(
+                                fontFamily: 'Kanit',
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  );
+                },
+              ),
+            );
+          },
+        );
+      },
+    ).then((_) {
+      // Cancel timer when dialog closes
+      if (timer.isActive) timer.cancel();
+    });
+  }
+
+  void showOrderStatusPopup(BuildContext context, String orderId) {
+    var cartProvider = Provider.of<CartProvider>(context, listen: false);
+    double totalAmount = cartProvider.getTotalPrice();
+    showDialog(
+      barrierDismissible: false,
+      context: context,
+      builder: (context) {
+        return StreamBuilder<DocumentSnapshot>(
+          stream:
+              FirebaseFirestore.instance
+                  .collection('orders')
+                  .doc(orderId)
+                  .snapshots(),
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) {
+              return AlertDialog(
+                title: Text('Placing Order'),
+                backgroundColor: Colors.white,
+                content: CircularProgressIndicator(),
+              );
+            }
+
+            final data = snapshot.data!.data() as Map<String, dynamic>;
+            final status = data['status'];
+
+            if (status == 'accepted') {
+              return AlertDialog(
+                backgroundColor: Colors.white,
+                title: Text(
+                  'Order Accepted!',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Color(0xff7C6565),
+                    fontFamily: 'Kanit',
+                    fontStyle: FontStyle.normal,
+                  ),
+                ),
+                content: Container(
+                  padding: EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Your order has been accepted. \nSwipe to confirm your order.',
+                        style: TextStyle(
+                          color: Color(0xff7C6565),
+                          fontFamily: 'Kanit',
+                          fontStyle: FontStyle.normal,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      SizedBox(height: 16),
+                      SizedBox(
+                        width: 250,
+                        height: 50,
+                        child: DefaultTextStyle.merge(
+                          style: TextStyle(
+                            fontFamily: 'Kanit',
+                            fontStyle: FontStyle.normal,
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.normal,
+                          ),
+                          child: IconTheme.merge(
+                            data: IconThemeData(color: Colors.white),
+                            child: AnimatedToggleSwitch.dual(
+                              current: switchValue,
+                              first: false,
+                              second: true,
+                              spacing: 80,
+                              animationDuration: Duration(milliseconds: 600),
+                              style: const ToggleStyle(
+                                borderColor: Colors.transparent,
+                                indicatorColor: Color(0xff1C0F05),
+                                backgroundColor: Color(0xffD9D9D9),
+                              ),
+                              borderWidth: 8,
+                              height: 50,
+                              customStyleBuilder: (context, local, global) {
+                                if (global.position <= 0) {
+                                  return ToggleStyle(
+                                    backgroundColor: Color(0xff7C6565),
+                                  );
+                                }
+                                return ToggleStyle(
+                                  backgroundGradient: LinearGradient(
+                                    colors: [
+                                      Color(0xffD9D9D9),
+                                      Color(0xff7C6565)!,
+                                    ],
+                                    stops: [
+                                      global.position -
+                                          (1 -
+                                                  2 *
+                                                      max(
+                                                        0,
+                                                        global.position - 0.5,
+                                                      )) *
+                                              0.7,
+                                      global.position +
+                                          max(0, 2 * (global.position - 0.5)) *
+                                              0.7,
+                                    ],
+                                  ),
+                                );
+                              },
+                              loadingIconBuilder:
+                                  (context, global) =>
+                                      CupertinoActivityIndicator(
+                                        color: Color.lerp(
+                                          Color(0xffD9D9D9),
+                                          Color(0xff7C6565),
+                                          global.position,
+                                        ),
+                                      ),
+                              onChanged: (value) async {
+                                setState(() {
+                                  switchValue = value;
+                                });
+
+                                if (value == true) {
+                                  Navigator.of(context).pop(); // Close dialog
+
+                                  Future.delayed(Duration(milliseconds: 300));
+                                  showPaymentTimerDialog(
+                                    context,
+                                    orderId,
+                                    totalAmount,
+                                  );
+
+                                  setState(() {
+                                    switchValue = false;
+                                  });
+                                }
+                              },
+                              iconBuilder:
+                                  (value) =>
+                                      value
+                                          ? Icon(
+                                            Icons.arrow_back_ios_rounded,
+                                            color: Colors.white,
+                                          )
+                                          : Icon(
+                                            Icons.arrow_forward_ios_rounded,
+                                            color: Colors.white,
+                                          ),
+                              textBuilder:
+                                  (value) =>
+                                      value
+                                          ? Text('REDIRECTING')
+                                          : Text('CONFIRM TO PAY'),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            } else if (status == 'declined') {
+              final reason = data['owner_reason'] ?? 'No reason provided.';
+              return AlertDialog(
+                backgroundColor: Colors.white,
+                title: Text(
+                  'Order Rejected',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Color(0xff7C6565),
+                    fontFamily: 'Kanit',
+                  ),
+                ),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Sorry, the owner has rejected your order.',
+                      style: TextStyle(
+                        color: Color(0xff7C6565),
+                        fontFamily: 'Kanit',
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    SizedBox(height: 10),
+                    Text(
+                      'Reason:\n$reason',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.redAccent,
+                        fontFamily: 'Kanit',
+                      ),
+                    ),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: Text(
+                      'OK',
+                      style: TextStyle(
+                        color: Color(0xff7C6565),
+                        fontFamily: 'Kanit',
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            } else {
+              return AlertDialog(
+                backgroundColor: Colors.white,
+                title: Text(
+                  'Waiting for store...',
+                  style: TextStyle(
+                    color: Color(0xff7C6565),
+                    fontFamily: 'Kanit',
+                    fontStyle: FontStyle.normal,
+                  ),
+                ),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(color: Color(0xff7C6565)),
+                    SizedBox(height: 16),
+                    Text(
+                      'Waiting for your store to accept the order...',
+                      style: TextStyle(
+                        color: Color(0xff7C6565),
+                        fontFamily: 'Kanit',
+                        fontStyle: FontStyle.normal,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+          },
+        );
+      },
+    );
+  }
+
+  // showPaymentTimerDialog(context);
+  // Navigator.push(
+  //   context,
+  //   PageRouteBuilder(
+  //     transitionDuration: Duration(seconds: 2),
+  //     pageBuilder:
+  //         (_, __, ___) =>
+  //             OrderConfirmationScreen(
+  //               orderId: orderId,
+  //             ),
+  //   ),
+  // );
+  Future<String?> saveOrderToFirestore() async {
+    var cartProvider = Provider.of<CartProvider>(context, listen: false);
+    var cartItems = cartProvider.cart;
+    var cartDuplicateItems = cartProvider.cartDuplicate;
+
+    // Get current user ID from Firebase Auth
+    String userId = FirebaseAuth.instance.currentUser!.uid;
+
+    // Order items array
+    List<Map<String, dynamic>> orderItems = [];
+
+    // Loop through regular cart items
+    for (var item in cartItems) {
+      orderItems.add({
+        'name': item.name,
+        'size': 'Regular', // For items without size
+        'quantity': item.quantity,
+        'price': item.price,
+        'total_price': item.price * item.quantity,
+        'image': item.image,
+      });
+    }
+
+    // Loop through duplicate items
+    for (var item in cartDuplicateItems) {
+      orderItems.add({
+        'name': item.name,
+        'size': item.size, // For items with size
+        'quantity': item.quantity,
+        'price': item.price,
+        'total_price': item.price * item.quantity,
+        'image': item.image,
+      });
+    }
+
+    // Calculate total price of the order
+    double totalPrice = cartProvider.getTotalPrice();
+
+    // Get current date
+    DateTime now = DateTime.now();
+
+    // Create order document in Firestore
+    try {
+      DocumentReference orderRef = await FirebaseFirestore.instance
+          .collection('orders')
+          .add({
+            'user_id': userId,
+            'order_items': orderItems,
+            'status': null,
+            'order_date': now,
+            'order_number':
+                'ORD-${now.millisecondsSinceEpoch}', // Unique order number
+            'total_price': totalPrice,
+          });
+
+      print("Order placed successfully: ${orderRef.id}");
+      return orderRef.id;
+    } catch (e) {
+      print('Error placing order: $e');
+      return null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     var cartProvider = Provider.of<CartProvider>(context);
@@ -247,7 +934,101 @@ class _CartScreenState extends State<CartScreen> {
                             text: 'Proceed',
                             colour: Colors.white,
                             textColour: Color(0xff7C6565),
-                            onPressed: () {},
+                            onPressed: () async {
+                              final selectedLocation =
+                                  Provider.of<LocationProvider>(
+                                    context,
+                                    listen: false,
+                                  ).selectedLocation;
+
+                              if (selectedLocation == null) {
+                                // ⚠️ Show warning dialog
+                                showDialog(
+                                  context: context,
+                                  builder:
+                                      (context) => AlertDialog(
+                                        title: Text(
+                                          "Location Required",
+                                          style: TextStyle(
+                                            color: Color(0xff7C6565),
+                                            fontFamily: 'Kanit',
+                                          ),
+                                        ),
+                                        content: Text(
+                                          "Please select your location before placing the order.",
+                                          style: TextStyle(
+                                            color: Color(0xff7C6565),
+                                            fontFamily: 'Kanit',
+                                          ),
+                                        ),
+                                        actions: [
+                                          TextButton(
+                                            child: Text(
+                                              "OK",
+                                              style: TextStyle(
+                                                color: Color(0xff7C6565),
+                                                fontFamily: 'Kanit',
+                                              ),
+                                            ),
+                                            onPressed:
+                                                () => Navigator.pop(context),
+                                          ),
+                                        ],
+                                      ),
+                                );
+                                return;
+                              }
+
+                              final user = FirebaseAuth.instance.currentUser;
+                              if (user != null) {
+                                DocumentSnapshot customerDoc =
+                                    await FirebaseFirestore.instance
+                                        .collection('customers') // or 'users'
+                                        .doc(user.uid)
+                                        .get();
+
+                                if (customerDoc.exists) {
+                                  // ✅ Already saved - fetch and use the details directly
+                                  final data =
+                                      customerDoc.data()
+                                          as Map<String, dynamic>;
+                                  customerName = data['name'];
+                                  customerPhone = data['phone'];
+
+                                  // Place order directly
+                                  String? orderId =
+                                      await saveOrderToFirestore();
+                                  if (orderId != null) {
+                                    await FirebaseFirestore.instance
+                                        .collection('orders')
+                                        .doc(orderId)
+                                        .update({
+                                          'customer_name': customerName,
+                                          'customer_phone': customerPhone,
+                                          'location':
+                                              selectedLocation, // ✅ Save location
+                                        });
+
+                                    showOrderStatusPopup(context, orderId);
+                                  } else {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'Failed to place order',
+                                          style: TextStyle(
+                                            color: Color(0xff7C6565),
+                                          ),
+                                        ),
+                                        backgroundColor: Colors.white,
+                                      ),
+                                    );
+                                  }
+                                } else {
+                                  // ❌ Not saved yet - show popup
+                                  showCustomerDetailsPopup(context);
+                                }
+                              }
+                            },
                           ),
                         ),
                       ],
@@ -280,7 +1061,12 @@ class orderList extends StatelessWidget {
                 child: Text(
                   '$itemName\n($size) x$quantity',
                   textAlign: TextAlign.start,
-                  style: TextStyle(color: Colors.black, fontSize: 16),
+                  style: TextStyle(
+                    color: Colors.black,
+                    fontSize: 16,
+                    fontFamily: 'Kanit',
+                    fontStyle: FontStyle.normal,
+                  ),
                 ),
               ),
               Container(
@@ -288,7 +1074,12 @@ class orderList extends StatelessWidget {
                 child: Text(
                   price,
                   textAlign: TextAlign.end,
-                  style: TextStyle(color: Colors.black, fontSize: 15.6),
+                  style: TextStyle(
+                    color: Colors.black,
+                    fontSize: 15.6,
+                    fontFamily: 'Kanit',
+                    fontStyle: FontStyle.normal,
+                  ),
                 ),
               ),
             ],
@@ -325,18 +1116,30 @@ class _cartWidgetDuplicateState extends State<cartWidgetDuplicate> {
           ),
           child: Row(
             children: [
-              Container(
-                width: 134,
-                height: 134,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(9),
-                  image: DecorationImage(
-                    image: NetworkImage(
-                      'https://drive.google.com/uc?export=view&id=${widget.image}',
+              ClipRRect(
+                borderRadius: BorderRadius.circular(9),
+                child: Stack(
+                  children: [
+                    CachedNetworkImage(
+                      imageUrl:
+                          'https://drive.google.com/uc?export=view&id=${widget.image}',
+                      width: 134,
+                      height: 134,
+                      fit: BoxFit.cover,
+                      placeholder:
+                          (context, url) => Image.asset(
+                            'assets/images/menu/buffering_img.jpg',
+                            fit: BoxFit.cover,
+                          ),
+                      errorWidget:
+                          (context, url, error) => Container(
+                            width: 134,
+                            height: 134,
+                            color: Colors.white,
+                            child: Icon(Icons.error),
+                          ),
                     ),
-                    fit: BoxFit.cover,
-                  ),
+                  ],
                 ),
               ),
               SizedBox(width: 15),
@@ -357,7 +1160,7 @@ class _cartWidgetDuplicateState extends State<cartWidgetDuplicate> {
                     Row(
                       children: [
                         Text(
-                          'Select Size:',
+                          'Size:',
                           style: TextStyle(
                             fontSize: 14,
                             color: Colors.white,
@@ -406,9 +1209,8 @@ class _cartWidgetDuplicateState extends State<cartWidgetDuplicate> {
                                     context,
                                     listen: false,
                                   ).removeFromCart(
-                                    name: widget.name, // pass the item name
-                                    size:
-                                        null, // pass size if needed, or pass null
+                                    name: widget.name,
+                                    size: null,
                                   );
                                 }
                               });
@@ -471,18 +1273,30 @@ class _cartWidgetState extends State<cartWidget> {
           ),
           child: Row(
             children: [
-              Container(
-                width: 134,
-                height: 134,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(9),
-                  image: DecorationImage(
-                    image: NetworkImage(
-                      'https://drive.google.com/uc?export=view&id=${widget.image}',
+              ClipRRect(
+                borderRadius: BorderRadius.circular(9),
+                child: Stack(
+                  children: [
+                    CachedNetworkImage(
+                      imageUrl:
+                          'https://drive.google.com/uc?export=view&id=${widget.image}',
+                      width: 134,
+                      height: 134,
+                      fit: BoxFit.cover,
+                      placeholder:
+                          (context, url) => Image.asset(
+                            'assets/images/menu/buffering_img.jpg',
+                            fit: BoxFit.cover,
+                          ),
+                      errorWidget:
+                          (context, url, error) => Container(
+                            width: 134,
+                            height: 134,
+                            color: Colors.white,
+                            child: Icon(Icons.error),
+                          ),
                     ),
-                    fit: BoxFit.cover,
-                  ),
+                  ],
                 ),
               ),
               SizedBox(width: 15),
@@ -503,7 +1317,7 @@ class _cartWidgetState extends State<cartWidget> {
                     Row(
                       children: [
                         Text(
-                          'Select Size:',
+                          'Size:',
                           style: TextStyle(
                             fontSize: 14,
                             color: Colors.white,
@@ -552,10 +1366,8 @@ class _cartWidgetState extends State<cartWidget> {
                                     context,
                                     listen: false,
                                   ).removeFromCart(
-                                    name: widget.name, // pass the item name
-                                    size:
-                                        widget
-                                            .selectedSize, // pass size if needed, or pass null
+                                    name: widget.name,
+                                    size: widget.selectedSize,
                                   );
                                 }
                               });

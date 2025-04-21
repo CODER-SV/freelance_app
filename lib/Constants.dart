@@ -39,3 +39,15 @@ const kDivider = Divider(
   indent: 35,
   endIndent: 35,
 );
+const toggleTextStyle = TextStyle(
+  fontFamily: 'Kanit',
+  fontStyle: FontStyle.normal,
+);
+const Color backgroundDark = Color(0xff1C0F05);
+
+const TextStyle loadingTextStyle = TextStyle(
+  fontSize: 18,
+  color: Colors.white70,
+  fontFamily: 'Kanit',
+  fontWeight: FontWeight.w300,
+);
