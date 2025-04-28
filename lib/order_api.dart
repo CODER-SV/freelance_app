@@ -7,7 +7,7 @@ class OrderAPI {
     return {
       'Content-Type': 'application/json',
       'Authorization':
-          'Basic ${base64Encode(utf8.encode('rzp_live_CMd1pX2dby3B2x:CzRiEJOMQSnNUGg2MjoX2mVt'))}',
+          'Basic ${base64Encode(utf8.encode(''))}',
     };
   }
 
