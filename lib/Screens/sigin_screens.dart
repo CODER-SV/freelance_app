@@ -206,12 +206,6 @@ class conti extends StatelessWidget {
             ),
           ),
           SizedBox(height: 100),
-          RoundedButton(
-            text: 'Sign up',
-            colour: Color(0xff5F4B48),
-            textColour: Colors.white,
-            onPressed: () {},
-          ),
         ],
       ),
     );

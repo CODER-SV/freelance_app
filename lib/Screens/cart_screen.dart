@@ -11,8 +11,11 @@ import 'package:nescafe_flutter/Screens/order_confirmation_screen.dart';
 import 'package:provider/provider.dart';
 import '../provider/cart_provider.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
+import 'package:nescafe_flutter/order_api.dart';
 
 bool switchValue = false;
+
+late String currentFirestoreOrderId;
 
 class CartScreen extends StatefulWidget {
   static const String id = 'cart_screen';
@@ -179,21 +182,81 @@ class _CartScreenState extends State<CartScreen> {
     );
   }
 
+  late Razorpay _razorpay;
+  Timer? _dialogTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _razorpay = Razorpay();
+    _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handlePaymentSuccess);
+    _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handlePaymentError);
+    _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
+  }
+
+  @override
+  void dispose() {
+    _razorpay.clear();
+    _dialogTimer?.cancel();
+    super.dispose();
+  }
+
+  void _handlePaymentSuccess(PaymentSuccessResponse response) async {
+    final paymentId = response.paymentId;
+
+    if (currentFirestoreOrderId.isNotEmpty) {
+      await FirebaseFirestore.instance
+          .collection('orders')
+          .doc(currentFirestoreOrderId)
+          .update({
+            'payment_status': 'successful',
+            'payment_id': paymentId,
+            'status': 'accepted',
+          });
+
+      // Navigate to confirmation screen
+      if (context.mounted) {
+        Navigator.of(context).pop(); // close the dialog first
+        Future.delayed(Duration(milliseconds: 300), () {
+          if (context.mounted) {
+            Navigator.push(
+              context,
+              PageRouteBuilder(
+                transitionDuration: Duration(seconds: 2),
+                pageBuilder:
+                    (_, __, ___) => OrderConfirmationScreen(
+                      orderId: currentFirestoreOrderId,
+                    ),
+              ),
+            );
+          }
+        });
+      }
+    } else {
+      debugPrint("Order ID not found!");
+    }
+  }
+
+  void _handlePaymentError(PaymentFailureResponse response) {
+    debugPrint("Payment Failed: ${response.message}");
+  }
+
+  void _handleExternalWallet(ExternalWalletResponse response) {
+    debugPrint("External Wallet selected: ${response.walletName}");
+  }
+
   void showPaymentTimerDialog(
     BuildContext parentContext,
     String orderId,
     double amount,
   ) {
     final endTime = DateTime.now().add(Duration(minutes: 2));
-    late Timer timer;
     bool isTimeUp = false;
 
     final orderRef = FirebaseFirestore.instance
         .collection('orders')
         .doc(orderId);
-
-    // Step 1: Set payment_status = pending
-    orderRef.update({'payment_status': 'pending'});
+    orderRef.update({'payment_status': 'N/A'});
 
     showDialog(
       context: parentContext,
@@ -201,37 +264,13 @@ class _CartScreenState extends State<CartScreen> {
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (context, setState) {
-            // Initialize the timer only once
-            timer = Timer.periodic(Duration(seconds: 1), (t) async {
+            _dialogTimer?.cancel();
+            _dialogTimer = Timer.periodic(Duration(seconds: 1), (timer) async {
               final now = DateTime.now();
               final difference = endTime.difference(now);
 
-              final snap = await orderRef.get();
-              final data = snap.data();
-              final status = data?['payment_status'];
-
-              if (status == 'successful') {
-                t.cancel();
-                if (Navigator.of(dialogContext).canPop()) {
-                  Navigator.of(dialogContext).pop();
-                }
-
-                // Navigate after dialog closes
-                Future.delayed(Duration(milliseconds: 300), () {
-                  if (parentContext.mounted) {
-                    Navigator.push(
-                      parentContext,
-                      PageRouteBuilder(
-                        transitionDuration: Duration(seconds: 2),
-                        pageBuilder:
-                            (_, __, ___) =>
-                                OrderConfirmationScreen(orderId: orderId),
-                      ),
-                    );
-                  }
-                });
-              } else if (difference.isNegative && !isTimeUp) {
-                t.cancel();
+              if (difference.isNegative && !isTimeUp) {
+                timer.cancel();
                 isTimeUp = true;
 
                 await orderRef.update({
@@ -239,20 +278,16 @@ class _CartScreenState extends State<CartScreen> {
                   'status': 'declined',
                 });
 
-                if (context.mounted) {
-                  setState(() {});
-                }
+                if (context.mounted) setState(() {});
               } else {
-                if (context.mounted) {
-                  setState(() {});
-                }
+                if (context.mounted) setState(() {});
               }
             });
 
             return WillPopScope(
-              onWillPop: () async => false, // Prevent back press
-              child: StatefulBuilder(
-                builder: (context, setState) {
+              onWillPop: () async => false,
+              child: Builder(
+                builder: (context) {
                   final now = DateTime.now();
                   final remaining = endTime.difference(now);
                   final minutes = remaining.inMinutes
@@ -292,39 +327,62 @@ class _CartScreenState extends State<CartScreen> {
                             ),
                           ),
                           SizedBox(height: 16),
-                          ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Color(0xff7C6565),
-                              padding: EdgeInsets.symmetric(
-                                horizontal: 24,
-                                vertical: 12,
-                              ),
-                            ),
-                            onPressed: () {
-                              timer.cancel(); // cancel timer
-                              Navigator.of(
-                                dialogContext,
-                              ).pop(); // close this dialog
+                          RoundedButton(
+                            text: 'Pay Now',
+                            colour: Color(0xff7C6565),
+                            textColour: Colors.white,
+                            onPressed: () async {
+                              final orderRef = FirebaseFirestore.instance
+                                  .collection('orders')
+                                  .doc(orderId);
+                              orderRef.update({'payment_status': 'pending'});
+                              currentFirestoreOrderId = orderId;
+                              int totalAmount = (amount * 100).toInt();
 
-                              Navigator.push(
-                                context,
-                                PageRouteBuilder(
-                                  transitionDuration: Duration(seconds: 2),
-                                  pageBuilder:
-                                      (_, __, ___) => OrderConfirmationScreen(
-                                        orderId: orderId,
-                                      ),
-                                ),
+                              final id = await OrderAPI.generateOrderID(
+                                totalAmount,
                               );
-                            },
+                              print('The order id is $id');
 
-                            child: Text(
-                              'Pay Now',
-                              style: TextStyle(
-                                fontFamily: 'Kanit',
-                                color: Colors.white,
-                              ),
-                            ),
+                              try {
+                                var options = {
+                                  'key': 'rzp_live_CMd1pX2dby3B2x',
+                                  'amount': totalAmount,
+                                  'name':
+                                      customerName.isNotEmpty
+                                          ? customerName
+                                          : 'Customer',
+                                  'description': 'Your Order',
+                                  'order_id': id,
+                                  'prefill': {
+                                    'contact':
+                                        customerPhone.isNotEmpty
+                                            ? customerPhone
+                                            : '9999999999',
+                                    'email':
+                                        FirebaseAuth
+                                            .instance
+                                            .currentUser
+                                            ?.email ??
+                                        'test@example.com',
+                                  },
+                                  'notes': {
+                                    'orderId': orderId,
+                                    'id': id,
+                                    'userId':
+                                        FirebaseAuth
+                                            .instance
+                                            .currentUser
+                                            ?.uid ??
+                                        '',
+                                  },
+                                };
+
+                                _razorpay.open(options);
+                              } catch (e) {
+                                debugPrint('Razorpay Error: $e');
+                              }
+                            },
                           ),
                         ] else ...[
                           Text(
@@ -339,7 +397,6 @@ class _CartScreenState extends State<CartScreen> {
                           ElevatedButton(
                             onPressed: () {
                               Navigator.of(dialogContext).pop();
-
                               Future.delayed(Duration(milliseconds: 300), () {
                                 if (parentContext.mounted) {
                                   Navigator.pushReplacement(
@@ -376,10 +433,7 @@ class _CartScreenState extends State<CartScreen> {
           },
         );
       },
-    ).then((_) {
-      // Cancel timer when dialog closes
-      if (timer.isActive) timer.cancel();
-    });
+    ).then((_) => _dialogTimer?.cancel());
   }
 
   void showOrderStatusPopup(BuildContext context, String orderId) {
@@ -755,7 +809,7 @@ class _CartScreenState extends State<CartScreen> {
                       text: 'GO TO MENU',
                       colour: Colors.white,
                       textColour: Color(0xff7C6565),
-                      onPressed: () {
+                      onPressed: () async {
                         Navigator.pop(context);
                       },
                     ),

@@ -302,7 +302,7 @@ class _OrderConfirmationScreenState extends State<OrderConfirmationScreen> {
                   text: 'NEXT',
                   colour: Color(0xff7C6565),
                   textColour: Colors.white,
-                  onPressed: () {
+                  onPressed: () async {
                     // ✅ Clear cart before redirecting
                     Provider.of<CartProvider>(
                       context,

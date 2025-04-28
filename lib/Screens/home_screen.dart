@@ -905,7 +905,7 @@ class _popUpCustomizeState extends State<popUpCustomize> {
                   text: 'Okay',
                   colour: Color(0xff7C6565),
                   textColour: Colors.white,
-                  onPressed: () {
+                  onPressed: () async {
                     if (selectedSize != null) {
                       int selectedPrice =
                           selectedSize == 'Regular'
